@@ -33,3 +33,4 @@ build/
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
+.venv/
