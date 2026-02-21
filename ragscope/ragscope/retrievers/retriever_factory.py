@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Any
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -11,7 +10,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.vectorstores import Qdrant
 from langchain.retrievers import EnsembleRetriever
-from langchain_openai import OpenAIEmbeddings
+from langchain_ollama import OllamaEmbeddings
 
 from ragscope.configs.experiment_config import ExperimentConfig
 
@@ -30,15 +29,19 @@ class RetrieverFactory:
     @staticmethod
     def _get_embedding_model(model_name: str) -> Embeddings:
         """Return the appropriate LangChain embedding model for the given name."""
-        if model_name in ("text-embedding-3-small", "text-embedding-3-large"):
-            logger.info("Using OpenAI embeddings: %s", model_name)
-            return OpenAIEmbeddings(model=model_name)
-        if model_name == "all-MiniLM-L6-v2":
+        if model_name in ("all-MiniLM-L6-v2", "all-mpnet-base-v2"):
             logger.info("Using HuggingFace embeddings: %s", model_name)
             return HuggingFaceEmbeddings(model_name=model_name)
+        if model_name == "nomic-embed-text":
+            base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+            logger.info("Using Ollama embeddings: nomic-embed-text (base_url=%s)", base_url)
+            return OllamaEmbeddings(
+                model="nomic-embed-text",
+                base_url=base_url,
+            )
         raise RetrieverFactoryError(
             f"Unsupported embedding model: {model_name}. "
-            "Supported: text-embedding-3-small, text-embedding-3-large, all-MiniLM-L6-v2."
+            "Supported: all-MiniLM-L6-v2, nomic-embed-text, all-mpnet-base-v2."
         )
 
     @staticmethod

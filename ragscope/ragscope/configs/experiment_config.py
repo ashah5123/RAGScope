@@ -13,13 +13,13 @@ class ExperimentConfig(BaseModel):
     chunk_size: int = 512
     chunk_overlap: int = 50
     embedding_model: Literal[
-        "text-embedding-3-small",
-        "text-embedding-3-large",
         "all-MiniLM-L6-v2",
+        "nomic-embed-text",
+        "all-mpnet-base-v2",
     ]
     retriever_type: Literal["dense", "sparse", "hybrid"]
     top_k: int = 5
-    llm_model: Literal["gpt-4o-mini", "gpt-4o", "mistral-7b"]
+    llm_model: Literal["llama3.2", "mistral", "gemma2"]
     dataset_path: str
     description: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
