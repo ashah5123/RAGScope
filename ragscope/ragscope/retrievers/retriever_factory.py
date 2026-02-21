@@ -29,19 +29,19 @@ class RetrieverFactory:
     @staticmethod
     def _get_embedding_model(model_name: str) -> Embeddings:
         """Return the appropriate LangChain embedding model for the given name."""
-        if model_name in ("all-MiniLM-L6-v2", "all-mpnet-base-v2"):
-            logger.info("Using HuggingFace embeddings: %s", model_name)
+        if model_name in ["all-MiniLM-L6-v2", "all-mpnet-base-v2"]:
+            logger.info("Using HuggingFace embeddings: model_name=%s", model_name)
             return HuggingFaceEmbeddings(model_name=model_name)
         if model_name == "nomic-embed-text":
             base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-            logger.info("Using Ollama embeddings: nomic-embed-text (base_url=%s)", base_url)
-            return OllamaEmbeddings(
-                model="nomic-embed-text",
-                base_url=base_url,
+            logger.info(
+                "Using Ollama embeddings: model=nomic-embed-text, base_url=%s",
+                base_url,
             )
+            return OllamaEmbeddings(model="nomic-embed-text", base_url=base_url)
         raise RetrieverFactoryError(
-            f"Unsupported embedding model: {model_name}. "
-            "Supported: all-MiniLM-L6-v2, nomic-embed-text, all-mpnet-base-v2."
+            f"Unsupported embedding model: {model_name!r}. "
+            "Supported: all-MiniLM-L6-v2, all-mpnet-base-v2, nomic-embed-text."
         )
 
     @staticmethod
@@ -100,14 +100,23 @@ class RetrieverFactory:
         api_key = os.environ.get("QDRANT_API_KEY")
         if not url:
             raise RetrieverFactoryError(
-                "QDRANT_URL environment variable is required for dense retriever."
+                "QDRANT_URL environment variable is required for dense retriever. "
+                "Set QDRANT_URL to your Qdrant server URL (e.g. http://localhost:6333)."
+            )
+        if not api_key:
+            logger.info(
+                "QDRANT_API_KEY not set; connecting to Qdrant without API key (local or unauthenticated)."
             )
 
         try:
             embeddings = RetrieverFactory._get_embedding_model(config.embedding_model)
+        except RetrieverFactoryError:
+            raise
         except Exception as e:
             logger.exception("Failed to create embedding model for dense retriever")
-            raise RetrieverFactoryError(f"Embedding model error: {e}") from e
+            raise RetrieverFactoryError(
+                f"Embedding model error: {e!r}. Check embedding_model and env (e.g. OLLAMA_BASE_URL for nomic-embed-text)."
+            ) from e
 
         try:
             vectorstore = Qdrant.from_documents(
@@ -119,14 +128,17 @@ class RetrieverFactory:
             )
             retriever = vectorstore.as_retriever(search_kwargs={"k": k})
             logger.info(
-                "Created dense retriever (Qdrant) with collection=%s, k=%s",
+                "Created dense retriever (Qdrant) collection=%s, k=%s, url=%s",
                 collection_name,
                 k,
+                url,
             )
             return retriever
         except Exception as e:
             logger.exception("Failed to create Qdrant vector store")
-            raise RetrieverFactoryError(f"Qdrant error: {e}") from e
+            raise RetrieverFactoryError(
+                f"Qdrant error: {e!r}. Check QDRANT_URL (and QDRANT_API_KEY if required)."
+            ) from e
 
     @staticmethod
     def _get_sparse_retriever(

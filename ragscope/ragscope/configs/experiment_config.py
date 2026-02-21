@@ -14,8 +14,8 @@ class ExperimentConfig(BaseModel):
     chunk_overlap: int = 50
     embedding_model: Literal[
         "all-MiniLM-L6-v2",
-        "nomic-embed-text",
         "all-mpnet-base-v2",
+        "nomic-embed-text",
     ]
     retriever_type: Literal["dense", "sparse", "hybrid"]
     top_k: int = 5
