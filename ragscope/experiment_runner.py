@@ -42,7 +42,7 @@ class ExperimentRunner:
         self.logger = logging.getLogger(__name__)
 
     def run_single(self, config: ExperimentConfig) -> ExperimentResult:
-        """Run a single experiment for the given config; returns ExperimentResult or fallback on error."""
+        """Run a single experiment; returns ExperimentResult. Re-raises on failure."""
         self.logger.info(
             "Starting experiment: name=%s, id=%s",
             config.experiment_name,
@@ -54,17 +54,9 @@ class ExperimentRunner:
             pipeline.build_index(documents)
             pipeline_results = pipeline.run_batch(self.questions)
 
-            latencies = [
-                r.get("latency_ms")
-                for r in pipeline_results
-                if isinstance(r.get("latency_ms"), (int, float))
-            ]
-            avg_latency_ms = (
-                sum(latencies) / len(latencies) if latencies else 0.0
-            )
-
             evaluator = RAGASEvaluator()
             metrics = evaluator.evaluate(pipeline_results, self.ground_truths)
+            avg_latency_ms = metrics.get("avg_latency_ms", 0.0)
 
             return ExperimentResult(
                 experiment_id=config.experiment_id,
@@ -74,7 +66,7 @@ class ExperimentRunner:
                 context_recall=metrics["context_recall"],
                 context_precision=metrics["context_precision"],
                 avg_latency_ms=avg_latency_ms,
-                total_cost_usd=None,
+                total_cost_usd=0.0,
                 timestamp=datetime.now(timezone.utc),
                 notes="",
             )
@@ -84,28 +76,31 @@ class ExperimentRunner:
                 config.experiment_name,
                 config.experiment_id,
             )
-            return ExperimentResult(
-                experiment_id=config.experiment_id,
-                config=config,
-                faithfulness=0.0,
-                answer_relevancy=0.0,
-                context_recall=0.0,
-                context_precision=0.0,
-                avg_latency_ms=0.0,
-                total_cost_usd=None,
-                timestamp=datetime.now(timezone.utc),
-                notes=str(e),
-            )
+            raise RuntimeError(
+                f"Experiment failed ({config.experiment_name}): {e!r}"
+            ) from e
 
     def run_all(self) -> List[ExperimentResult]:
-        """Run all configured experiments and return a list of ExperimentResult."""
+        """Run all configured experiments; returns only successful results. Logs failures and continues."""
         n = len(self.configs)
         self.logger.info("Starting batch run: %d experiment(s)", n)
         results: List[ExperimentResult] = []
         for i, config in enumerate(self.configs, start=1):
             print(f"Running experiment {i}/{n}: {config.experiment_name}")
-            results.append(self.run_single(config))
-        self.logger.info("Batch run complete: %d result(s)", len(results))
+            try:
+                results.append(self.run_single(config))
+            except Exception as e:
+                self.logger.warning(
+                    "Skipping failed experiment %s (%s): %s",
+                    config.experiment_name,
+                    config.experiment_id,
+                    e,
+                )
+        self.logger.info(
+            "Batch run complete: %d succeeded, %d failed",
+            len(results),
+            n - len(results),
+        )
         return results
 
     def save_results(self, results: List[ExperimentResult]) -> None:
