@@ -1,0 +1,35 @@
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Local scratch
+data/
+run_test.py
+
+# Virtual env
+.venv/
+
+# Python cache / bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
