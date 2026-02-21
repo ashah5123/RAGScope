@@ -71,6 +71,12 @@ class RAGASEvaluator:
         questions = [r["question"] for r in pipeline_results]
         answers = [r["answer"] for r in pipeline_results]
         contexts = [r["contexts"] for r in pipeline_results]
+        latencies = [
+            r.get("latency_ms")
+            for r in pipeline_results
+            if isinstance(r.get("latency_ms"), (int, float))
+        ]
+        avg_latency_ms = sum(latencies) / len(latencies) if latencies else 0.0
 
         data = {
             "question": questions,
@@ -107,7 +113,7 @@ class RAGASEvaluator:
             self._logger.exception("RAGAS evaluate failed")
             raise RuntimeError(
                 f"RAGAS evaluation failed: {e!r}. "
-                "Ensure Ollama is running (llama3.2) and ragas/datasets are installed."
+                "Use a local judge (e.g. Ollama with OLLAMA_BASE_URL) and ensure ragas and datasets are installed."
             ) from e
 
         metric_names = [
@@ -139,6 +145,7 @@ class RAGASEvaluator:
 
         overall = sum(scores.get(n, 0.0) for n in metric_names) / 4.0
         scores["overall_score"] = overall
+        scores["avg_latency_ms"] = avg_latency_ms
 
         self._logger.info(
             "Metric scores: faithfulness=%.4f, answer_relevancy=%.4f, "
@@ -148,7 +155,7 @@ class RAGASEvaluator:
             scores["context_recall"],
             scores["context_precision"],
         )
-        self._logger.info("Overall score: %.4f", overall)
+        self._logger.info("Overall score: %.4f, avg_latency_ms=%.2f", overall, avg_latency_ms)
 
         return scores
 
@@ -160,10 +167,15 @@ class RAGASEvaluator:
 
 **Experiment Name:** {config.experiment_name}
 **Experiment ID:** {config.experiment_id}
-**Chunk Size:** {config.chunk_size}
-**Embedding Model:** {config.embedding_model}
-**Retriever Type:** {config.retriever_type}
-**LLM Model:** {config.llm_model}
+
+## Config
+
+- **Chunk Size:** {config.chunk_size}
+- **Chunk Overlap:** {config.chunk_overlap}
+- **Embedding Model:** {config.embedding_model}
+- **Retriever Type:** {config.retriever_type}
+- **Top K:** {config.top_k}
+- **LLM Model:** {config.llm_model}
 
 ## Metrics
 
@@ -172,4 +184,5 @@ class RAGASEvaluator:
 - **Context Recall:** {results.get("context_recall", 0):.4f}
 - **Context Precision:** {results.get("context_precision", 0):.4f}
 - **Overall Score:** {results.get("overall_score", 0):.4f}
+- **Avg Latency (ms):** {results.get("avg_latency_ms", 0):.2f}
 """
