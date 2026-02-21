@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragscope"
+version = "0.1.0"
+description = "Automated benchmarking & evaluation framework for RAG pipelines"
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+dependencies = [
+  "langchain",
+  "langchain-community",
+  "langchain-text-splitters",
+  "ragas",
+  "qdrant-client",
+  "sentence-transformers",
+  "pandas",
+  "datasets",
+  "python-dotenv",
+  "pydantic",
+  "fastapi",
+  "uvicorn",
+  "wandb"
+]
+
+[tool.setuptools]
+packages = ["ragscope"]
