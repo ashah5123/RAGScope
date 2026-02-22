@@ -22,9 +22,11 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          # Install your package (root pyproject.toml)
+          # Install package from repo root in editable mode
           python -m pip install -e .
-          # Ensure test tooling exists even if extras fail
+          # Ensure required runtime extras for tests are present
+          python -m pip install langchain-ollama langchain-huggingface rank_bm25 datasets
+          # Make sure test tooling exists
           python -m pip install pytest pytest-cov
 
       - name: Run tests
