@@ -54,3 +54,9 @@ ragscope/scripts/
 # mac / vscode
 .DS_Store
 .vscode/
+
+.venv/
+experiments/
+__pycache__/
+*.pyc
+.DS_Store
