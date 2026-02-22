@@ -2,15 +2,23 @@
 
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 from datasets import Dataset
-from langchain_community.chat_models import ChatOllama
 
 from ragscope.configs.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _get_chat_ollama(model: str, base_url: str):
+    """Return ChatOllama from langchain_ollama or langchain_community. No OpenAI."""
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError:
+        from langchain_community.chat_models import ChatOllama
+    return ChatOllama(model=model, base_url=base_url)
 
 
 def _mean_score(val) -> float:
@@ -32,30 +40,25 @@ def _mean_score(val) -> float:
 class RAGASEvaluator:
     """
     Evaluates RAG pipeline outputs using RAGAS with a local judge LLM (Ollama).
-    Uses only free/local components; no OpenAI.
+    100% free/local: no OpenAI; uses OLLAMA_BASE_URL and optional llm_model.
     """
 
     def __init__(self) -> None:
         self._logger = logging.getLogger(f"{__name__}.RAGASEvaluator")
-        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        self._judge_llm = ChatOllama(
-            model="llama3.2",
-            base_url=base_url,
-        )
-        self._logger.info(
-            "RAGASEvaluator initialized with judge model=llama3.2, base_url=%s",
-            base_url,
-        )
+        self._logger.info("RAGASEvaluator initialized (local judge only, no OpenAI)")
 
     def evaluate(
         self,
         pipeline_results: List[dict],
         ground_truths: List[str],
+        llm_model: Optional[str] = None,
     ) -> Dict[str, float]:
         """
-        Run RAGAS evaluation on pipeline outputs. Validates that lengths match,
-        builds a RAGAS-compatible dataset, runs evaluate(), and returns mean
-        scores plus overall_score (average of the four metrics).
+        Run RAGAS evaluation on pipeline outputs using a local Ollama judge.
+        Validates lengths, builds dataset, runs RAGAS with local LLM; returns
+        faithfulness, answer_relevancy, context_recall, context_precision,
+        overall_score, avg_latency_ms. On failure returns zeros for metrics
+        but still returns all keys with avg_latency_ms from pipeline_results.
         """
         if len(pipeline_results) != len(ground_truths):
             raise ValueError(
@@ -63,8 +66,12 @@ class RAGASEvaluator:
                 f"but ground_truths has {len(ground_truths)}. They must be equal."
             )
 
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        model = llm_model or "llama3.2"
         self._logger.info(
-            "Starting RAGAS evaluation for %d samples",
+            "Starting RAGAS evaluation (local judge): model=%s, base_url=%s, n=%d",
+            model,
+            base_url,
             len(pipeline_results),
         )
 
@@ -87,7 +94,18 @@ class RAGASEvaluator:
         ds = Dataset.from_dict(data)
         self._logger.info("Dataset size: %d rows", len(ds))
 
+        metric_names = [
+            "faithfulness",
+            "answer_relevancy",
+            "context_recall",
+            "context_precision",
+        ]
+        zero_scores = {n: 0.0 for n in metric_names}
+        zero_scores["overall_score"] = 0.0
+        zero_scores["avg_latency_ms"] = avg_latency_ms
+
         try:
+            judge_llm = _get_chat_ollama(model, base_url)
             from ragas import evaluate
             from ragas.llms import LangchainLLMWrapper
             from ragas.metrics import (
@@ -97,7 +115,7 @@ class RAGASEvaluator:
                 faithfulness,
             )
 
-            wrapped_llm = LangchainLLMWrapper(self._judge_llm)
+            wrapped_llm = LangchainLLMWrapper(judge_llm)
             metrics = [
                 faithfulness,
                 answer_relevancy,
@@ -110,20 +128,13 @@ class RAGASEvaluator:
                 llm=wrapped_llm,
             )
         except Exception as e:
-            self._logger.exception("RAGAS evaluate failed")
-            raise RuntimeError(
-                f"RAGAS evaluation failed: {e!r}. "
-                "Use a local judge (e.g. Ollama with OLLAMA_BASE_URL) and ensure ragas and datasets are installed."
-            ) from e
+            self._logger.exception(
+                "RAGAS evaluate failed (returning zeros). Error: %s",
+                e,
+            )
+            return zero_scores
 
-        metric_names = [
-            "faithfulness",
-            "answer_relevancy",
-            "context_recall",
-            "context_precision",
-        ]
         scores = {}
-
         if hasattr(result, "to_pandas"):
             try:
                 df = result.to_pandas()
