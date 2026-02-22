@@ -2,42 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Show repo files
+      - name: Install package + dev deps
         run: |
-          pwd
-          ls -la
-          echo "---- pyproject.toml (root) ----"
-          sed -n '1,120p' pyproject.toml || true
-          echo "---- find nested pyproject.toml ----"
-          find . -name pyproject.toml -maxdepth 4 -print
-
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install project + dev dependencies
-        run: |
-          python -m pip install -e ".[dev]"
-          python -m pip show ragscope || true
-          python -m pip show langchain-ollama || true
-          python -c "import langchain_ollama; print('langchain_ollama OK')"
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]"
 
       - name: Run tests
-        run: python -m pytest -q ragscope/tests
+        run: |
+          python -m pytest -q
+
+      - name: Black (non-blocking)
+        continue-on-error: true
+        run: |
+          python -m pip install black
+          black --check .
