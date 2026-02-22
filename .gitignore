@@ -37,3 +37,20 @@ build/
 
 # Keep docs assets tracked (do not add *.png or docs/*.png)
 !docs/dashboard.png
+
+# local virtualenvs
+.venv/
+venv/
+
+# local experiments / runtime outputs
+experiments/
+data/*.sqlite
+*.db
+
+# local scripts / temp
+scripts/
+ragscope/scripts/
+
+# mac / vscode
+.DS_Store
+.vscode/
