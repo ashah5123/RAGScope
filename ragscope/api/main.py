@@ -40,6 +40,30 @@ app.add_middleware(
 
 DEFAULT_RESULTS_DIR = "experiments/"
 
+METRIC_KEYS = ("faithfulness", "answer_relevancy", "context_recall", "context_precision")
+
+
+def is_valid_result(r: ExperimentResult | dict) -> bool:
+    """Return False if overall_score is missing/<=0 or all four metrics are zero."""
+    if isinstance(r, dict):
+        overall = r.get("overall_score")
+        if overall is None:
+            vals = [r.get(k) for k in METRIC_KEYS]
+            if None in vals:
+                return False
+            overall = sum(vals) / 4
+        if overall is None or overall <= 0:
+            return False
+        if all(r.get(k) == 0 for k in METRIC_KEYS):
+            return False
+        return True
+    # ExperimentResult: no overall_score field, compute from metrics
+    metrics = (r.faithfulness, r.answer_relevancy, r.context_recall, r.context_precision)
+    if all(m == 0 for m in metrics):
+        return False
+    overall = sum(metrics) / 4
+    return overall > 0
+
 
 def _load_all_results(results_dir: str) -> List[dict]:
     """Load and combine all results_*.json files from results_dir. Returns list of dicts."""
@@ -105,20 +129,34 @@ async def run_experiments(body: RunExperimentsRequest) -> List[dict]:
 
 
 @app.get("/experiments/results")
-async def get_results(results_dir: Optional[str] = None) -> List[dict]:
+async def get_results(
+    results_dir: Optional[str] = None,
+    include_invalid: bool = False,
+) -> List[dict]:
     """Return combined list of all saved experiment result dicts from results_dir."""
     dir_path = results_dir or DEFAULT_RESULTS_DIR
-    logger.info("GET /experiments/results dir=%s", dir_path)
+    logger.info("GET /experiments/results dir=%s include_invalid=%s", dir_path, include_invalid)
     combined = _load_all_results(dir_path)
+    total = len(combined)
+    if not include_invalid:
+        combined = [r for r in combined if is_valid_result(r)]
+        filtered = total - len(combined)
+        logger.info("Results: loaded=%d filtered_out=%d returned=%d", total, filtered, len(combined))
+    else:
+        logger.info("Results: loaded=%d returned=%d (include_invalid=True)", total, total)
     return combined
 
 
 @app.get("/experiments/leaderboard")
 async def get_leaderboard(results_dir: Optional[str] = None) -> List[dict]:
-    """Return leaderboard (list of dicts) sorted by overall_score descending."""
+    """Return leaderboard (list of dicts) sorted by overall_score descending. Invalid results are excluded."""
     dir_path = results_dir or DEFAULT_RESULTS_DIR
     logger.info("GET /experiments/leaderboard dir=%s", dir_path)
     combined = _load_all_results(dir_path)
+    total = len(combined)
+    combined = [r for r in combined if is_valid_result(r)]
+    filtered = total - len(combined)
+    logger.info("Leaderboard: loaded=%d filtered_out=%d returned=%d", total, filtered, len(combined))
     if not combined:
         return []
     df = pd.DataFrame(combined)
