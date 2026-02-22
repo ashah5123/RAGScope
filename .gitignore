@@ -60,3 +60,9 @@ experiments/
 __pycache__/
 *.pyc
 .DS_Store
+
+# --- Benchmark documents (allow raw PDFs) ---
+data/**
+!data/raw/
+!data/raw/**
+!data/raw/*.pdf
