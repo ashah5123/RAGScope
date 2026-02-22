@@ -34,3 +34,6 @@ build/
 # Jupyter checkpoints
 .ipynb_checkpoints/
 .venv/
+
+# Keep docs assets tracked (do not add *.png or docs/*.png)
+!docs/dashboard.png

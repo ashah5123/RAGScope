@@ -111,7 +111,7 @@ Example leaderboard (columns match the dashboard):
 
 ![Dashboard Screenshot](docs/dashboard.png)
 
-*(Add `docs/dashboard.png` to show the Streamlit leaderboard and comparison views.)*
+**Add the screenshot:** Run the Streamlit dashboard, take a screenshot of the leaderboard (or main view), and save it as `docs/dashboard.png` so it appears above.
 
 ---
 
