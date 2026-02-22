@@ -9,6 +9,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,12 +20,23 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Show repo files
+        run: |
+          pwd
+          ls -la
+          echo "---- pyproject.toml (root) ----"
+          sed -n '1,120p' pyproject.toml || true
+          echo "---- find nested pyproject.toml ----"
+          find . -name pyproject.toml -maxdepth 4 -print
+
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
       - name: Install project + dev dependencies
         run: |
           python -m pip install -e ".[dev]"
+          python -m pip show ragscope || true
+          python -m pip show langchain-ollama || true
           python -c "import langchain_ollama; print('langchain_ollama OK')"
 
       - name: Run tests
