@@ -4,6 +4,7 @@ import glob
 import json
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
@@ -17,6 +18,18 @@ from ragscope.experiment_runner import ExperimentRunner
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAGScope API", version="0.1.0")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_RESULTS_DIR = PROJECT_ROOT / 'experiments'
+
+def _resolve_results_dir(results_dir: str | None) -> Path:
+    # If caller passes absolute path, use it. Otherwise resolve relative to repo root.
+    if results_dir:
+        rd = _resolve_results_dir(results_dir)
+        return rd if rd.is_absolute() else (PROJECT_ROOT / rd)
+    return DEFAULT_RESULTS_DIR
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,7 +64,7 @@ class RunExperimentsRequest(BaseModel):
     questions: List[str]
     ground_truths: List[str]
     data_path: str
-    results_dir: str = "experiments/"
+    results_dir: str = "experiments/"  # kept for request model default
 
 
 @app.get("/health")

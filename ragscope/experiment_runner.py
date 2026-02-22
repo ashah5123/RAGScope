@@ -55,7 +55,11 @@ class ExperimentRunner:
             pipeline_results = pipeline.run_batch(self.questions)
 
             evaluator = RAGASEvaluator()
-            metrics = evaluator.evaluate(pipeline_results, self.ground_truths)
+            metrics = evaluator.evaluate(
+                pipeline_results,
+                self.ground_truths,
+                llm_model=config.llm_model,
+            )
             avg_latency_ms = metrics.get("avg_latency_ms", 0.0)
 
             return ExperimentResult(
