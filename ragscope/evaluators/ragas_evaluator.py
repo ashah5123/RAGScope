@@ -6,19 +6,28 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 from datasets import Dataset
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from ragscope.configs.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_JUDGE_MODEL = "llama3.2"
+DEFAULT_EMBEDDINGS_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+OLLAMA_EMBEDDINGS_MODEL = "nomic-embed-text"
+DEFAULT_RAGAS_MAX_WORKERS = 1
+DEFAULT_RAGAS_TIMEOUT_S = 240
 
-def _get_chat_ollama(model: str, base_url: str):
-    """Return ChatOllama from langchain_ollama or langchain_community. No OpenAI."""
-    try:
-        from langchain_ollama import ChatOllama
-    except ImportError:
-        from langchain_community.chat_models import ChatOllama
-    return ChatOllama(model=model, base_url=base_url)
+
+def _get_embeddings(base_url: str):
+    """Return local embeddings (Ollama or HuggingFace). No OpenAI."""
+    model = os.environ.get("RAGAS_EMBEDDINGS_MODEL", DEFAULT_EMBEDDINGS_MODEL)
+    if model == OLLAMA_EMBEDDINGS_MODEL:
+        logger.info("RAGAS embeddings: Ollama model=%s, base_url=%s", model, base_url)
+        return OllamaEmbeddings(model=OLLAMA_EMBEDDINGS_MODEL, base_url=base_url)
+    logger.info("RAGAS embeddings: HuggingFace model=%s", model)
+    return HuggingFaceEmbeddings(model_name=model)
 
 
 def _mean_score(val) -> float:
@@ -39,8 +48,8 @@ def _mean_score(val) -> float:
 
 class RAGASEvaluator:
     """
-    Evaluates RAG pipeline outputs using RAGAS with a local judge LLM (Ollama).
-    100% free/local: no OpenAI; uses OLLAMA_BASE_URL and optional llm_model.
+    Evaluates RAG pipeline outputs using RAGAS with local Ollama judge and local embeddings (no OpenAI).
+    Env: OLLAMA_BASE_URL, RAGAS_JUDGE_MODEL (judge LLM), RAGAS_EMBEDDINGS_MODEL (Ollama or HuggingFace).
     """
 
     def __init__(self) -> None:
@@ -55,10 +64,9 @@ class RAGASEvaluator:
     ) -> Dict[str, float]:
         """
         Run RAGAS evaluation on pipeline outputs using a local Ollama judge.
-        Validates lengths, builds dataset, runs RAGAS with local LLM; returns
-        faithfulness, answer_relevancy, context_recall, context_precision,
-        overall_score, avg_latency_ms. On failure returns zeros for metrics
-        but still returns all keys with avg_latency_ms from pipeline_results.
+        Validates lengths, builds dataset, runs RAGAS with local LLM and run_config;
+        returns faithfulness, answer_relevancy, context_recall, context_precision,
+        overall_score, avg_latency_ms. On failure logs and raises RuntimeError.
         """
         if len(pipeline_results) != len(ground_truths):
             raise ValueError(
@@ -67,12 +75,22 @@ class RAGASEvaluator:
             )
 
         base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        model = llm_model or "llama3.2"
+        judge_model = llm_model or os.environ.get("RAGAS_JUDGE_MODEL", DEFAULT_JUDGE_MODEL)
+        try:
+            max_workers = int(os.environ.get("RAGAS_MAX_WORKERS", DEFAULT_RAGAS_MAX_WORKERS))
+        except (TypeError, ValueError):
+            max_workers = DEFAULT_RAGAS_MAX_WORKERS
+        try:
+            timeout_s = int(os.environ.get("RAGAS_TIMEOUT_S", DEFAULT_RAGAS_TIMEOUT_S))
+        except (TypeError, ValueError):
+            timeout_s = DEFAULT_RAGAS_TIMEOUT_S
         self._logger.info(
-            "Starting RAGAS evaluation (local judge): model=%s, base_url=%s, n=%d",
-            model,
+            "RAGAS evaluation: judge_model=%s, base_url=%s, n=%d, max_workers=%s, timeout_s=%s",
+            judge_model,
             base_url,
             len(pipeline_results),
+            max_workers,
+            timeout_s,
         )
 
         questions = [r["question"] for r in pipeline_results]
@@ -100,12 +118,10 @@ class RAGASEvaluator:
             "context_recall",
             "context_precision",
         ]
-        zero_scores = {n: 0.0 for n in metric_names}
-        zero_scores["overall_score"] = 0.0
-        zero_scores["avg_latency_ms"] = avg_latency_ms
 
         try:
-            judge_llm = _get_chat_ollama(model, base_url)
+            judge_llm = ChatOllama(model=judge_model, base_url=base_url)
+            embeddings = _get_embeddings(base_url)
             from ragas import evaluate
             from ragas.llms import LangchainLLMWrapper
             from ragas.metrics import (
@@ -114,7 +130,9 @@ class RAGASEvaluator:
                 context_recall,
                 faithfulness,
             )
+            from ragas.run_config import RunConfig
 
+            run_config = RunConfig(max_workers=max_workers, timeout=timeout_s)
             wrapped_llm = LangchainLLMWrapper(judge_llm)
             metrics = [
                 faithfulness,
@@ -126,13 +144,12 @@ class RAGASEvaluator:
                 dataset=ds,
                 metrics=metrics,
                 llm=wrapped_llm,
+                embeddings=embeddings,
+                run_config=run_config,
             )
         except Exception as e:
-            self._logger.exception(
-                "RAGAS evaluate failed (returning zeros). Error: %s",
-                e,
-            )
-            return zero_scores
+            self._logger.exception("RAGAS evaluate failed")
+            raise RuntimeError(str(e) or "RAGAS evaluation failed") from e
 
         scores = {}
         if hasattr(result, "to_pandas"):
