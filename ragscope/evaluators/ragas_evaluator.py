@@ -1,6 +1,6 @@
-# RAGAS-based evaluation for faithfulness, answer relevancy, and context precision.
-# Local-first: uses Ollama for judge and HuggingFace/Ollama embeddings (no OpenAI required).
-# In CI/pytest: skips RAGAS completely for speed and determinism.
+# RAGAS-based evaluation for faithfulness, answer relevancy, and context metrics.
+# Uses local Ollama judge + local embeddings (no OpenAI required).
+# NOTE: A fast-test shortcut is available ONLY when RAGSCOPE_FAST_TEST=1.
 
 import logging
 import math
@@ -17,50 +17,43 @@ from ragscope.configs.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
-IN_TEST = ("PYTEST_CURRENT_TEST" in os.environ) or (os.environ.get("CI") == "true")
+FAST_TEST = os.environ.get("RAGSCOPE_FAST_TEST", "0") == "1"
 
 DEFAULT_JUDGE_MODEL = "llama3.2"
 DEFAULT_EMBEDDINGS_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 OLLAMA_EMBEDDINGS_MODEL = "nomic-embed-text"
-
 DEFAULT_RAGAS_MAX_WORKERS = 1
 DEFAULT_RAGAS_TIMEOUT_S = 180
 DEFAULT_RAGAS_MAX_RETRIES = 2
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 
-# Build a parsing exception tuple that works across ragas/langchain versions
 _parsing_exceptions: tuple = (TimeoutError,)
 try:
     from langchain_core.exceptions import OutputParserException
 
     _parsing_exceptions = (OutputParserException, TimeoutError)
-except Exception:
+except ImportError:
     pass
-
 try:
-    from ragas.exceptions import RagasOutputParserException  # type: ignore
+    from ragas.exceptions import RagasOutputParserException
 
     _parsing_exceptions = _parsing_exceptions + (RagasOutputParserException,)
-except Exception:
+except ImportError:
     pass
 
 
 def _get_chat_ollama(model: str, base_url: str):
-    """
-    Return a ChatOllama instance for the judge LLM (langchain_community).
-    Module-level so unit tests can monkeypatch it.
-    """
+    """Module-level for easy test patching."""
     return ChatOllamaCommunity(
         model=model,
         base_url=base_url,
         temperature=0,
-        # RAGAS often expects structured outputs; JSON mode helps (may still fail on some models)
         model_kwargs={"format": "json"},
     )
 
 
 def _get_embeddings(base_url: str):
-    """Return local embeddings (Ollama or HuggingFace). No OpenAI."""
+    """Local embeddings (Ollama or HuggingFace). No OpenAI."""
     model = os.environ.get("RAGAS_EMBEDDINGS_MODEL", DEFAULT_EMBEDDINGS_MODEL)
     if model == OLLAMA_EMBEDDINGS_MODEL:
         logger.info("RAGAS embeddings: Ollama model=%s, base_url=%s", model, base_url)
@@ -70,7 +63,7 @@ def _get_embeddings(base_url: str):
 
 
 def _mean_score(val) -> float:
-    """Return mean of a metric value (list/array/Series) or scalar as float."""
+    """Mean for series/list; scalar otherwise."""
     if val is None:
         return 0.0
     if isinstance(val, pd.Series):
@@ -86,27 +79,26 @@ def _mean_score(val) -> float:
 
 
 def _zero_metrics(avg_latency_ms: float = 0.0) -> Dict[str, float]:
-    """Return metrics dict with all required keys set to 0.0."""
     return {
         "faithfulness": 0.0,
         "answer_relevancy": 0.0,
         "context_recall": 0.0,
         "context_precision": 0.0,
         "overall_score": 0.0,
-        "avg_latency_ms": float(avg_latency_ms),
+        "avg_latency_ms": avg_latency_ms,
     }
 
 
 class RAGASEvaluator:
     """
-    Evaluates RAG pipeline outputs using RAGAS with:
-      - local Ollama judge (no OpenAI)
-      - local embeddings (HF by default; optional Ollama embeddings)
-    Env vars:
+    Evaluates RAG pipeline outputs using RAGAS with local Ollama judge and local embeddings (no OpenAI).
+    Env:
       - OLLAMA_BASE_URL
       - RAGAS_JUDGE_MODEL
-      - RAGAS_EMBEDDINGS_MODEL (optional)
-      - RAGAS_MAX_WORKERS, RAGAS_TIMEOUT_S, RAGAS_MAX_RETRIES
+      - RAGAS_MAX_RETRIES
+      - RAGAS_MAX_WORKERS
+      - RAGAS_TIMEOUT_S
+      - RAGSCOPE_FAST_TEST=1 (optional: return zeros fast, used only when explicitly set)
     """
 
     def __init__(self) -> None:
@@ -124,22 +116,12 @@ class RAGASEvaluator:
         ground_truths: List[str],
         llm_model: Optional[str] = None,
     ) -> Dict[str, float]:
-        """
-        Run RAGAS evaluation on pipeline outputs.
-        Returns:
-          faithfulness, answer_relevancy, context_recall, context_precision,
-          overall_score, avg_latency_ms
-
-        In CI/pytest (IN_TEST): skips RAGAS and returns zeros + avg latency.
-        On parsing/timeouts/other errors: returns zeros + avg latency.
-        """
         if len(pipeline_results) != len(ground_truths):
             raise ValueError(
                 f"Length mismatch: pipeline_results has {len(pipeline_results)} items "
                 f"but ground_truths has {len(ground_truths)}. They must be equal."
             )
 
-        # compute latency always (so dashboards still get latency)
         latencies = [
             r.get("latency_ms")
             for r in pipeline_results
@@ -147,8 +129,7 @@ class RAGASEvaluator:
         ]
         avg_latency_ms = sum(latencies) / len(latencies) if latencies else 0.0
 
-        # fast path for tests/CI
-        if IN_TEST:
+        if FAST_TEST:
             return _zero_metrics(avg_latency_ms)
 
         base_url = os.environ.get("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
@@ -174,12 +155,15 @@ class RAGASEvaluator:
             max_retries,
         )
 
-        # Build dataset
+        questions = [r["question"] for r in pipeline_results]
+        answers = [r["answer"] for r in pipeline_results]
+        contexts = [r["contexts"] for r in pipeline_results]
+
         ds = Dataset.from_dict(
             {
-                "question": [r["question"] for r in pipeline_results],
-                "answer": [r["answer"] for r in pipeline_results],
-                "contexts": [r["contexts"] for r in pipeline_results],
+                "question": questions,
+                "answer": answers,
+                "contexts": contexts,
                 "ground_truth": ground_truths,
             }
         )
@@ -188,7 +172,7 @@ class RAGASEvaluator:
         metric_names = ["faithfulness", "answer_relevancy", "context_recall", "context_precision"]
 
         try:
-            judge_llm = self._get_judge_llm(judge_model)
+            judge_llm = self._get_judge_llm(llm_model)
             embeddings = _get_embeddings(base_url)
 
             from ragas import evaluate
@@ -201,33 +185,24 @@ class RAGASEvaluator:
             )
             from ragas.run_config import RunConfig
 
-            run_config = RunConfig(
-                max_workers=max_workers,
-                timeout=timeout_s,
-                max_retries=max_retries,
-            )
-
+            run_config = RunConfig(max_workers=max_workers, timeout=timeout_s, max_retries=max_retries)
             wrapped_llm = LangchainLLMWrapper(judge_llm)
-            metrics = [faithfulness, answer_relevancy, context_recall, context_precision]
 
             result = evaluate(
                 dataset=ds,
-                metrics=metrics,
+                metrics=[faithfulness, answer_relevancy, context_recall, context_precision],
                 llm=wrapped_llm,
                 embeddings=embeddings,
                 run_config=run_config,
             )
 
         except _parsing_exceptions as e:
-            self._logger.warning(
-                "RAGAS parsing/timeout failed (returning zero metrics): %s", e, exc_info=True
-            )
+            self._logger.warning("RAGAS parsing/timeout failed (returning zero metrics): %s", e, exc_info=True)
             return _zero_metrics(avg_latency_ms)
         except Exception as e:
             self._logger.warning("RAGAS evaluate failed (returning zero metrics): %s", e, exc_info=True)
             return _zero_metrics(avg_latency_ms)
 
-        # Extract scores robustly across ragas versions
         scores: Dict[str, float] = {}
 
         if hasattr(result, "to_pandas"):
@@ -245,17 +220,13 @@ class RAGASEvaluator:
                 val = result.get(name) if isinstance(result, dict) else getattr(result, name, None)
                 scores[name] = _mean_score(val)
 
-        # sanitize NaN -> 0
         for name in metric_names:
-            v = scores.get(name, 0.0)
+            v = scores.get(name)
             if v is None or (isinstance(v, float) and math.isnan(v)):
                 scores[name] = 0.0
 
         overall = sum(scores[n] for n in metric_names) / 4.0
-        if isinstance(overall, float) and math.isnan(overall):
-            overall = 0.0
-
-        scores["overall_score"] = float(overall)
+        scores["overall_score"] = overall
         scores["avg_latency_ms"] = float(avg_latency_ms)
 
         self._logger.info(
@@ -265,19 +236,17 @@ class RAGASEvaluator:
             scores["context_recall"],
             scores["context_precision"],
         )
-        self._logger.info("Overall score: %.4f, avg_latency_ms=%.2f", scores["overall_score"], scores["avg_latency_ms"])
+        self._logger.info("Overall score: %.4f, avg_latency_ms=%.2f", overall, avg_latency_ms)
 
         return scores
 
     def generate_report(self, results: Dict[str, float], config: ExperimentConfig) -> str:
-        """Return a formatted Markdown report string with experiment config and metrics."""
         return f"""# RAGScope Experiment Report
 
 **Experiment Name:** {config.experiment_name}
 **Experiment ID:** {config.experiment_id}
 
 ## Config
-
 - **Chunk Size:** {config.chunk_size}
 - **Chunk Overlap:** {config.chunk_overlap}
 - **Embedding Model:** {config.embedding_model}
@@ -286,7 +255,6 @@ class RAGASEvaluator:
 - **LLM Model:** {config.llm_model}
 
 ## Metrics
-
 - **Faithfulness:** {results.get("faithfulness", 0):.4f}
 - **Answer Relevancy:** {results.get("answer_relevancy", 0):.4f}
 - **Context Recall:** {results.get("context_recall", 0):.4f}
