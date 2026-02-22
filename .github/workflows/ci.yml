@@ -19,17 +19,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install package + dev deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e .
+          python -m pip install pytest pytest-cov
 
       - name: Run tests
         run: |
           python -m pytest -q ragscope/tests
-
-      - name: Black (non-blocking)
-        continue-on-error: true
-        run: |
-          python -m pip install "black[jupyter]"
-          black --check .
