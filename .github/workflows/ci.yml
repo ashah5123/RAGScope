@@ -19,15 +19,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install package + dev deps
         run: |
           python -m pip install --upgrade pip
-          # Install package from repo root in editable mode
-          python -m pip install -e .
-          # Ensure required runtime extras for tests are present
-          python -m pip install langchain-ollama langchain-huggingface rank_bm25 datasets
-          # Make sure test tooling exists
-          python -m pip install pytest pytest-cov
+          python -m pip install -e ".[dev]"
 
       - name: Run tests
         run: |
@@ -36,5 +31,5 @@ jobs:
       - name: Black (non-blocking)
         continue-on-error: true
         run: |
-          python -m pip install black
+          python -m pip install "black[jupyter]"
           black --check .
