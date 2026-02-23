@@ -66,3 +66,7 @@ data/**
 !data/raw/
 !data/raw/**
 !data/raw/*.pdf
+*.log
+*.bak
+debug_*
+run_*.log
