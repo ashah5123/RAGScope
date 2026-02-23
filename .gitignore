@@ -81,3 +81,14 @@ experiments/
 
 # keep archive ignored
 experiments/archive/
+
+# keep ignoring experiments by default
+experiments/
+
+# but allow committing benchmark outputs + leaderboard
+!experiments/results_*.csv
+!experiments/results_*.json
+!experiments/latest_leaderboard.csv
+
+# keep archive ignored
+experiments/archive/
