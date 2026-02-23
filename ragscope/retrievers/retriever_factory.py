@@ -121,7 +121,7 @@ class RetrieverFactory:
     @staticmethod
     def _get_embedding_model(model_name: str) -> Embeddings:
         if model_name in ["all-MiniLM-L6-v2", "all-mpnet-base-v2"]:
-            return HuggingFaceEmbeddings(model_name=model_name)
+            return HuggingFaceEmbeddings(model_name=model_name, model_kwargs={"device":"cpu"})
 
         if model_name == "nomic-embed-text":
             base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -157,7 +157,7 @@ class RetrieverFactory:
         api_key = os.environ.get("QDRANT_API_KEY", "").strip() or None
         if not url:
             raise RetrieverFactoryError("QDRANT_URL is required (e.g. http://localhost:6333).")
-        return QdrantClient(url=url, api_key=api_key)
+        return QdrantClient(url=url, api_key=api_key, timeout=int(os.environ.get('QDRANT_TIMEOUT_S', '180')))
 
     @staticmethod
     def _ensure_collection(client: QdrantClient, collection_name: str, vector_size: int) -> None:

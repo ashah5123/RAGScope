@@ -1,23 +1,45 @@
-# Orchestrates running RAG experiments with config, pipeline, evaluator, and tracking.
+from __future__ import annotations
 
+import csv
 import json
-import logging
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 
-import pandas as pd
-
-from ragscope.configs.experiment_config import ExperimentConfig, ExperimentResult
+from ragscope.configs.experiment_config import ExperimentConfig
 from ragscope.evaluators.ragas_evaluator import RAGASEvaluator
 from ragscope.pipelines.rag_pipeline import RAGPipeline
 
-if not logging.root.handlers:
-    logging.basicConfig(level=logging.INFO)
+
+def _utc_ts() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+
+
+def _jsonable(x: Any) -> Any:
+    # Make nested objects JSON-safe (datetime, pydantic, dataclasses, etc.)
+    if x is None:
+        return None
+    if isinstance(x, (str, int, float, bool)):
+        return x
+    if isinstance(x, datetime):
+        return x.isoformat()
+    if isinstance(x, dict):
+        return {k: _jsonable(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_jsonable(v) for v in x]
+    if hasattr(x, "model_dump"):
+        return _jsonable(x.model_dump())
+    if is_dataclass(x):
+        return _jsonable(asdict(x))
+    return str(x)
 
 
 class ExperimentRunner:
-    """Orchestrates running RAG experiments across configs with pipeline, evaluator, and result persistence."""
+    """
+    Runs one or more ExperimentConfig configs against a fixed benchmark (questions + ground_truths),
+    persists results to experiments/results_<timestamp>.json and .csv, and returns the in-memory results.
+    """
 
     def __init__(
         self,
@@ -25,141 +47,105 @@ class ExperimentRunner:
         questions: List[str],
         ground_truths: List[str],
         data_path: str,
-        results_dir: str = "experiments/",
+        results_dir: str = "experiments",
     ) -> None:
-        if len(questions) != len(ground_truths):
-            raise ValueError(
-                f"questions and ground_truths length mismatch: "
-                f"{len(questions)} vs {len(ground_truths)}"
-            )
-
         self.configs = configs
         self.questions = questions
         self.ground_truths = ground_truths
         self.data_path = data_path
-        self.results_dir = Path(results_dir)
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-        self.logger = logging.getLogger(__name__)
+        self.results_dir = results_dir
 
-    def run_single(self, config: ExperimentConfig) -> ExperimentResult:
-        """Run a single experiment; returns ExperimentResult. Re-raises on failure."""
-        self.logger.info(
-            "Starting experiment: name=%s, id=%s",
-            config.experiment_name,
-            config.experiment_id,
+        Path(self.results_dir).mkdir(parents=True, exist_ok=True)
+
+    def run_single(self, config: ExperimentConfig) -> Dict[str, Any]:
+        pipeline = RAGPipeline(config)
+
+        documents = pipeline.load_and_chunk_documents(self.data_path)
+        pipeline.build_index(documents)
+
+        pipeline_results = pipeline.run_batch(self.questions)
+
+        evaluator = RAGASEvaluator()
+        metrics = evaluator.evaluate(
+            pipeline_results=pipeline_results,
+            ground_truths=self.ground_truths,
+            llm_model=None,
         )
-        try:
-            pipeline = RAGPipeline(config)
-            documents = pipeline.load_and_chunk_documents(self.data_path)
-            pipeline.build_index(documents)
-            pipeline_results = pipeline.run_batch(self.questions)
 
-            evaluator = RAGASEvaluator()
-            metrics = evaluator.evaluate(
-                pipeline_results,
-                self.ground_truths,
-                llm_model=config.llm_model,
-            )
-            avg_latency_ms = metrics.get("avg_latency_ms", 0.0)
+        faith = float(metrics.get("faithfulness", 0.0) or 0.0)
+        rel = float(metrics.get("answer_relevancy", 0.0) or 0.0)
+        rec = float(metrics.get("context_recall", 0.0) or 0.0)
+        prec = float(metrics.get("context_precision", 0.0) or 0.0)
+        overall = (faith + rel + rec + prec) / 4.0
 
-            return ExperimentResult(
-                experiment_id=config.experiment_id,
-                config=config,
-                faithfulness=metrics["faithfulness"],
-                answer_relevancy=metrics["answer_relevancy"],
-                context_recall=metrics["context_recall"],
-                context_precision=metrics["context_precision"],
-                avg_latency_ms=avg_latency_ms,
-                total_cost_usd=0.0,
-                timestamp=datetime.now(timezone.utc),
-                notes="",
-            )
-        except Exception as e:
-            self.logger.exception(
-                "Experiment failed: name=%s, id=%s",
-                config.experiment_name,
-                config.experiment_id,
-            )
-            raise RuntimeError(
-                f"Experiment failed ({config.experiment_name}): {e!r}"
-            ) from e
+        row: Dict[str, Any] = {
+            "experiment_id": getattr(config, "experiment_id", None),
+            "experiment_name": getattr(config, "experiment_name", None),
+            "chunk_size": getattr(config, "chunk_size", None),
+            "chunk_overlap": getattr(config, "chunk_overlap", None),
+            "embedding_model": getattr(config, "embedding_model", None),
+            "retriever_type": getattr(config, "retriever_type", None),
+            "top_k": getattr(config, "top_k", None),
+            "llm_model": getattr(config, "llm_model", None),
+            "dataset_path": getattr(config, "dataset_path", None),
+            "faithfulness": faith,
+            "answer_relevancy": rel,
+            "context_recall": rec,
+            "context_precision": prec,
+            "overall_score": overall,
+            "avg_latency_ms": float(metrics.get("avg_latency_ms", 0.0) or 0.0),
+            "total_cost_usd": float(metrics.get("total_cost_usd", 0.0) or 0.0),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "notes": metrics.get("notes", "") or "",
+        }
 
-    def run_all(self) -> List[ExperimentResult]:
-        """Run all configured experiments; returns only successful results. Logs failures and continues."""
-        n = len(self.configs)
-        self.logger.info("Starting batch run: %d experiment(s)", n)
-        results: List[ExperimentResult] = []
-        for i, config in enumerate(self.configs, start=1):
-            print(f"Running experiment {i}/{n}: {config.experiment_name}")
-            try:
-                results.append(self.run_single(config))
-            except Exception as e:
-                self.logger.warning(
-                    "Skipping failed experiment %s (%s): %s",
-                    config.experiment_name,
-                    config.experiment_id,
-                    e,
-                )
-        self.logger.info(
-            "Batch run complete: %d succeeded, %d failed",
-            len(results),
-            n - len(results),
-        )
+        return _jsonable(row)
+
+    def run_batch(self) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        for cfg in self.configs:
+            results.append(self.run_single(cfg))
+        self.save_results(results)
         return results
 
-    def save_results(self, results: List[ExperimentResult]) -> None:
-        """Save results to JSON and CSV in self.results_dir. Logs paths; swallows errors."""
-        try:
-            self.results_dir.mkdir(parents=True, exist_ok=True)
-            timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-            data = [r.to_dict() for r in results]
+    def save_results(self, results: List[Dict[str, Any]]) -> None:
+        ts = _utc_ts()
+        json_path = Path(self.results_dir) / f"results_{ts}.json"
+        csv_path = Path(self.results_dir) / f"results_{ts}.csv"
 
-            json_path = self.results_dir / f"results_{timestamp_str}.json"
-            with open(json_path, "w") as f:
-                json.dump(data, f, indent=2)
-            self.logger.info("Saved results JSON: %s", json_path)
+        json_path.write_text(json.dumps(results, indent=2))
 
-            csv_path = self.results_dir / f"results_{timestamp_str}.csv"
-            pd.DataFrame(data).to_csv(csv_path, index=False)
-            self.logger.info("Saved results CSV: %s", csv_path)
-        except Exception:
-            self.logger.exception("Failed to save results")
+        # Stable CSV columns for your leaderboard/dashboard
+        fieldnames = [
+            "experiment_id",
+            "experiment_name",
+            "chunk_size",
+            "chunk_overlap",
+            "embedding_model",
+            "retriever_type",
+            "top_k",
+            "llm_model",
+            "dataset_path",
+            "faithfulness",
+            "answer_relevancy",
+            "context_recall",
+            "context_precision",
+            "overall_score",
+            "avg_latency_ms",
+            "total_cost_usd",
+            "timestamp",
+            "notes",
+        ]
 
-    def get_leaderboard(self, results: List[ExperimentResult]) -> pd.DataFrame:
-        """Return a DataFrame of results sorted by overall_score, with columns in fixed order."""
-        if not results:
-            return pd.DataFrame(
-                columns=[
-                    "experiment_name", "chunk_size", "embedding_model", "retriever_type",
-                    "llm_model", "faithfulness", "answer_relevancy", "context_recall",
-                    "context_precision", "overall_score", "avg_latency_ms",
-                ]
-            )
-        df = pd.DataFrame([r.to_dict() for r in results])
+        with csv_path.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fieldnames)
+            w.writeheader()
+            for r in results:
+                w.writerow({k: r.get(k) for k in fieldnames})
 
-        metric_cols = ["faithfulness", "answer_relevancy", "context_recall", "context_precision"]
-        if "overall_score" not in df.columns:
-            present = [c for c in metric_cols if c in df.columns]
-            df["overall_score"] = df[present].mean(axis=1) if present else 0.0
+        # Also keep a convenient latest leaderboard file
+        latest_path = Path(self.results_dir) / "latest_leaderboard.csv"
+        latest_path.write_text(csv_path.read_text())
 
-        config_map = {
-            "experiment_name": "config_experiment_name",
-            "chunk_size": "config_chunk_size",
-            "embedding_model": "config_embedding_model",
-            "retriever_type": "config_retriever_type",
-            "llm_model": "config_llm_model",
-        }
-        out = pd.DataFrame()
-        for out_col in [
-            "experiment_name", "chunk_size", "embedding_model", "retriever_type", "llm_model",
-            "faithfulness", "answer_relevancy", "context_recall", "context_precision",
-            "overall_score", "avg_latency_ms",
-        ]:
-            src = config_map.get(out_col, out_col)
-            if src in df.columns:
-                out[out_col] = df[src]
-            elif out_col in df.columns:
-                out[out_col] = df[out_col]
-            else:
-                out[out_col] = None
-        return out.sort_values("overall_score", ascending=False).reset_index(drop=True)
+        print(f"Saved: {json_path}")
+        print(f"Saved: {csv_path}")
