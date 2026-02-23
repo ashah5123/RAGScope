@@ -1,0 +1,2 @@
+experiment_id,experiment_name,chunk_size,chunk_overlap,embedding_model,retriever_type,top_k,llm_model,dataset_path,faithfulness,answer_relevancy,context_recall,context_precision,overall_score,avg_latency_ms,total_cost_usd,timestamp,notes
+783b86d4-1f42-426b-83a5-3beb18f10317,rag_survey_cs128_dense_all_MiniLM_L6_v2,128,20,all-MiniLM-L6-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.6833333333333333,0.13360850805131005,0.14285714285714285,0.14285714285428572,0.275664031774018,2440.65979548863,0.0,2026-02-23T08:26:20.633715+00:00,

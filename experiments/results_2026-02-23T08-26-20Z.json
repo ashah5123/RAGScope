@@ -1,0 +1,22 @@
+[
+  {
+    "experiment_id": "783b86d4-1f42-426b-83a5-3beb18f10317",
+    "experiment_name": "rag_survey_cs128_dense_all_MiniLM_L6_v2",
+    "chunk_size": 128,
+    "chunk_overlap": 20,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "retriever_type": "dense",
+    "top_k": 5,
+    "llm_model": "llama3.2",
+    "dataset_path": "data/raw/rag_survey_2024.pdf",
+    "faithfulness": 0.6833333333333333,
+    "answer_relevancy": 0.13360850805131005,
+    "context_recall": 0.14285714285714285,
+    "context_precision": 0.14285714285428572,
+    "overall_score": 0.275664031774018,
+    "avg_latency_ms": 2440.65979548863,
+    "total_cost_usd": 0.0,
+    "timestamp": "2026-02-23T08:26:20.633715+00:00",
+    "notes": ""
+  }
+]

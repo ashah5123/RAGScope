@@ -1,0 +1,16 @@
+experiment_id,experiment_name,chunk_size,chunk_overlap,embedding_model,retriever_type,top_k,llm_model,dataset_path,faithfulness,answer_relevancy,context_recall,context_precision,avg_latency_ms,total_cost_usd,notes,overall_score
+fde7e2c8-07a9-4147-ac7f-63ddbdfc3f5a,rag_survey_cs128_dense_all_MiniLM_L6_v2,128,20,all-MiniLM-L6-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,3746.006829398019,0.0,,0.0
+cd28fdd8-6d92-49b8-bd19-116e4f9e27c1,rag_survey_cs128_dense_all_mpnet_base_v2,128,20,all-mpnet-base-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,3359.8766326904297,0.0,,0.0
+95582078-d6e3-4496-9c1e-d135239af699,rag_survey_cs128_sparse_all_MiniLM_L6_v2,128,20,all-MiniLM-L6-v2,sparse,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,2652.83465385437,0.0,,0.0
+54eb7063-7982-4694-8ccb-f0791c3d3026,rag_survey_cs128_hybrid_all_MiniLM_L6_v2,128,20,all-MiniLM-L6-v2,hybrid,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,2264.11771774292,0.0,,0.0
+9d0bd508-0cb7-40b9-bca7-4d70e70bbd79,rag_survey_cs128_hybrid_all_mpnet_base_v2,128,20,all-mpnet-base-v2,hybrid,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,2758.652857371739,0.0,,0.0
+e1e993d5-1b0f-4c7a-818e-b92186b0d95e,rag_survey_cs256_dense_all_MiniLM_L6_v2,256,25,all-MiniLM-L6-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,2860.3646755218506,0.0,,0.0
+5a0952c0-048e-4679-9df0-3a6a8fbfc5ca,rag_survey_cs256_dense_all_mpnet_base_v2,256,25,all-mpnet-base-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,3785.969802311488,0.0,,0.0
+7f675405-4c85-43e9-a065-f98a22be6312,rag_survey_cs256_sparse_all_MiniLM_L6_v2,256,25,all-MiniLM-L6-v2,sparse,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,5379.331077848162,0.0,,0.0
+cbd9a5fb-cd3d-4e25-a4ce-2e2c6d749a0a,rag_survey_cs256_hybrid_all_MiniLM_L6_v2,256,25,all-MiniLM-L6-v2,hybrid,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,4792.18670300075,0.0,,0.0
+5072f5fd-8e9a-4a23-9504-17fa72b2507b,rag_survey_cs256_hybrid_all_mpnet_base_v2,256,25,all-mpnet-base-v2,hybrid,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,4136.106525148664,0.0,,0.0
+3870755e-321f-41f2-824b-da401907a31b,rag_survey_cs512_dense_all_MiniLM_L6_v2,512,51,all-MiniLM-L6-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,6258.473941258022,0.0,,0.0
+6d1e9721-6a8b-46ce-b88c-6ebb238cb845,rag_survey_cs512_dense_all_mpnet_base_v2,512,51,all-mpnet-base-v2,dense,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,5178.609848022461,0.0,,0.0
+8705296f-1cd0-46b4-9ab9-5091322132b4,rag_survey_cs512_sparse_all_MiniLM_L6_v2,512,51,all-MiniLM-L6-v2,sparse,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,5732.852288654873,0.0,,0.0
+3f298d9d-cadc-428d-a173-6526e57866fd,rag_survey_cs512_hybrid_all_MiniLM_L6_v2,512,51,all-MiniLM-L6-v2,hybrid,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,4322.933673858643,0.0,,0.0
+f003c3bd-83e0-4afc-bd33-d034055921e3,rag_survey_cs512_hybrid_all_mpnet_base_v2,512,51,all-mpnet-base-v2,hybrid,5,llama3.2,data/raw/rag_survey_2024.pdf,0.0,0.0,0.0,0.0,4807.332686015538,0.0,,0.0
